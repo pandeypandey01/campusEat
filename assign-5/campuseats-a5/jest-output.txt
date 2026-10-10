@@ -1,0 +1,26 @@
+PASS tests/orders.test.js
+  ✓ create order returns 201 with Location and ETag (62 ms)
+  ✓ same idempotency key returns original 200, no duplicate order (8 ms)
+  ✓ malformed body is rejected with 400 (4 ms)
+  ✓ unknown order id returns 404 (5 ms)
+  ✓ missing bearer token returns 401 (3 ms)
+  ✓ empty bearer token returns 401 (3 ms)
+  ✓ unsupported Accept header returns 406 (6 ms)
+  ✓ OPTIONS /orders/:id returns Allow header (4 ms)
+  ✓ If-None-Match with current ETag returns 304 with empty body (8 ms)
+  ✓ If-None-Match with stale ETag returns 200 with body (6 ms)
+  ✓ PATCH without If-Match is rejected with 400 (4 ms)
+  ✓ PATCH with stale If-Match returns 412 and does not modify the order (8 ms)
+  ✓ PATCH with fresh If-Match succeeds and rotates the ETag (8 ms)
+  ✓ X-HTTP-Method-Override: PATCH via POST behaves like a real PATCH (5 ms)
+  ✓ cancelling twice without a key returns 409 the second time (12 ms)
+  ✓ cancelling twice with the same Idempotency-Key returns the original result both times (5 ms)
+  ✓ exceeding the per-client budget returns 429 with Retry-After (37 ms)
+  ✓ CORS preflight OPTIONS is answered without auth (2 ms)
+  ✓ responses carry security headers and hide the framework (2 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       19 passed, 19 total
+Snapshots:   0 total
+Time:        0.609 s, estimated 1 s
+Ran all test suites.

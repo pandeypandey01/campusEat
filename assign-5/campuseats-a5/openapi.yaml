@@ -1,0 +1,267 @@
+openapi: 3.0.3
+info:
+  title: CampusEats Orders
+  version: "5.0.0"
+  description: >
+    Orders resource for CampusEats. Assignment 5 adds OPTIONS discovery,
+    conditional requests (ETag / If-None-Match / If-Match), content
+    negotiation, bearer auth, rate limiting, CORS and security headers
+    on top of the Assignment 4 create/read/list/cancel service.
+servers:
+  - url: http://localhost:8081
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      schema: { type: string }
+      description: Client-generated key. Replaying the same key returns the original result instead of repeating the side effect.
+    IfNoneMatch:
+      in: header
+      name: If-None-Match
+      schema: { type: string }
+      description: ETag from a prior GET. If it still matches, the server returns 304 with no body.
+    IfMatch:
+      in: header
+      name: If-Match
+      schema: { type: string }
+      description: ETag the client last read. Required on PATCH; a mismatch means someone else changed the resource first.
+  headers:
+    Location:
+      schema: { type: string }
+      description: On 201, the URL of the newly created resource.
+    ETag:
+      schema: { type: string }
+      description: Strong ETag over the current representation; changes on every write.
+    RateLimitLimit:
+      schema: { type: integer }
+      description: Requests allowed per client per window.
+    RateLimitRemaining:
+      schema: { type: integer }
+      description: Requests left in the current window.
+    RetryAfter:
+      schema: { type: integer }
+      description: Seconds to wait before retrying, sent with 429.
+    Allow:
+      schema: { type: string }
+      description: Comma-separated list of methods this resource supports.
+  schemas:
+    OrderRequest:
+      type: object
+      required: [studentId, itemId, qty, paymentMethodId]
+      properties:
+        studentId: { type: integer }
+        itemId: { type: integer }
+        qty: { type: integer, minimum: 1 }
+        paymentMethodId: { type: string }
+    OrderPatchRequest:
+      type: object
+      properties:
+        qty: { type: integer, minimum: 1 }
+    Order:
+      type: object
+      properties:
+        id: { type: integer }
+        studentId: { type: integer }
+        itemId: { type: integer }
+        qty: { type: integer }
+        status: { type: string, enum: [placed, cancelled] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    Problem:
+      type: object
+      description: RFC 7807 problem+json error body.
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        errors:
+          type: array
+          items:
+            type: array
+            items: { type: string }
+
+security:
+  - bearerAuth: []
+
+paths:
+  /orders:
+    options:
+      summary: Discover supported methods
+      security: []
+      responses:
+        "204":
+          description: No content
+          headers:
+            Allow: { $ref: "#/components/headers/Allow" }
+    post:
+      summary: Place a new order (unsafe, made idempotent via Idempotency-Key)
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderRequest" }
+      responses:
+        "201":
+          description: Order created
+          headers:
+            Location: { $ref: "#/components/headers/Location" }
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "200":
+          description: Idempotency-Key replay of an existing order
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "400": { description: Malformed request, content: { application/json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "401": { description: Missing/invalid bearer token, content: { application/json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "406": { description: Unsupported Accept type, content: { application/json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "422": { description: Payment declined, content: { application/json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "429":
+          description: Rate limit exceeded
+          headers:
+            Retry-After: { $ref: "#/components/headers/RetryAfter" }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Problem" } } }
+        "503": { description: Payments service unreachable, content: { application/json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+    get:
+      summary: List a student's orders (safe, idempotent; filter/sort/paginate via query string)
+      parameters:
+        - in: query
+          name: student
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: status
+          schema: { type: string, enum: [placed, cancelled] }
+        - in: query
+          name: sort
+          schema: { type: string, enum: [createdAt, -createdAt] }
+        - in: query
+          name: limit
+          schema: { type: integer }
+        - in: query
+          name: offset
+          schema: { type: integer }
+      responses:
+        "200":
+          description: List of orders
+          headers:
+            Cache-Control: { schema: { type: string }, description: "no-store" }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Order" }
+        "400": { description: Missing/invalid student query param, content: { application/json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "401": { description: Missing/invalid bearer token }
+
+  /orders/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer }
+    options:
+      summary: Discover supported methods
+      security: []
+      responses:
+        "204":
+          description: No content
+          headers:
+            Allow: { $ref: "#/components/headers/Allow" }
+    get:
+      summary: Read a single order (safe, idempotent). Cacheable with a conditional re-check.
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: Order details
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+            Cache-Control: { schema: { type: string }, description: "private, max-age=30, must-revalidate" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "304": { description: Not Modified (If-None-Match still matches); no body }
+        "401": { description: Missing/invalid bearer token }
+        "404": { description: Order not found, content: { application/json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+    patch:
+      summary: Modify a placed order's quantity. Unsafe; requires If-Match to prevent lost updates.
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderPatchRequest" }
+      responses:
+        "200":
+          description: Order updated
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "400": { description: Missing If-Match, or invalid body }
+        "401": { description: Missing/invalid bearer token }
+        "404": { description: Order not found }
+        "409": { description: Order is no longer in a modifiable state }
+        "412":
+          description: If-Match no longer matches the current ETag
+          content: { application/json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    post:
+      summary: >
+        Fallback for clients that cannot send PATCH: POST with
+        X-HTTP-Method-Override: PATCH is treated exactly like PATCH /orders/{id}.
+        Documented fallback only -- no other override value is honoured.
+      parameters:
+        - in: header
+          name: X-HTTP-Method-Override
+          required: true
+          schema: { type: string, enum: [PATCH] }
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderPatchRequest" }
+      responses:
+        "200": { description: Order updated (same as PATCH) }
+        "405": { description: Missing/unsupported override value }
+
+  /orders/{id}/cancel:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer }
+    options:
+      summary: Discover supported methods
+      security: []
+      responses:
+        "204":
+          description: No content
+          headers:
+            Allow: { $ref: "#/components/headers/Allow" }
+    post:
+      summary: >
+        Cancel an order. Modelled as a sub-resource action, not DELETE,
+        because an order is a financial record that must not be destroyed.
+        Naturally neither safe nor idempotent; made retry-safe with an
+        optional Idempotency-Key.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "202": { description: Cancellation accepted }
+        "200": { description: Idempotency-Key replay of an already-processed cancel }
+        "401": { description: Missing/invalid bearer token }
+        "404": { description: Order not found }
+        "409": { description: Order is not in a cancellable state, content: { application/json: { schema: { $ref: "#/components/schemas/Problem" } } } }
