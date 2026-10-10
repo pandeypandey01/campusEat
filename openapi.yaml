@@ -1,0 +1,89 @@
+openapi: 3.0.3
+info: { title: Campus Eat Orders API, version: 6.0.0 }
+paths:
+  /orders:
+    get:
+      summary: List orders
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Order' } } }, application/xml: { schema: { type: array, items: { $ref: '#/components/schemas/Order' } } } } }
+        '406': { $ref: '#/components/responses/Problem' }
+    post:
+      summary: Place an order
+      parameters:
+        - { name: Idempotency-Key, in: header, required: false, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/NewOrder' } } }
+      responses:
+        '201':
+          description: Created
+          headers: { Location: { schema: { type: string, example: /orders/1 } } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/Order' } }, application/xml: { schema: { $ref: '#/components/schemas/Order' } } }
+        '400': { description: Malformed JSON, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '402': { description: payment-declined, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '406': { description: not-acceptable, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '409': { description: item-unavailable, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '422': { description: empty-cart / validation-failed / idempotency-key-reuse, content: { application/problem+json: { schema: { $ref: '#/components/schemas/ValidationProblem' } } } }
+        '429': { $ref: '#/components/responses/Retryable' }
+        '500': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Retryable' }
+  /orders/{id}:
+    parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+    get:
+      summary: Get an order
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Order' } }, application/xml: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '404': { description: order-not-found, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '406': { $ref: '#/components/responses/Problem' }
+    patch:
+      summary: Advance order status
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [status], properties: { status: { $ref: '#/components/schemas/Status' } } } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '404': { description: order-not-found, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '409': { description: illegal-transition, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '422': { description: validation-failed, content: { application/problem+json: { schema: { $ref: '#/components/schemas/ValidationProblem' } } } }
+    delete:
+      summary: Cancel an order (only while placed)
+      responses:
+        '204': { description: Cancelled }
+        '404': { description: order-not-found, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '409': { description: illegal-transition, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+components:
+  responses:
+    Problem: { description: Error, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+    Retryable:
+      description: Transient failure - retry after the delay
+      headers: { Retry-After: { schema: { type: integer }, description: Seconds to wait } }
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
+  schemas:
+    Status: { type: string, enum: [placed, preparing, ready, collected, cancelled] }
+    NewOrder:
+      type: object
+      required: [items, address]
+      properties:
+        items: { type: array, minItems: 1, items: { type: object, required: [sku, qty], properties: { sku: { type: string, minLength: 1 }, qty: { type: integer, minimum: 1 } } } }
+        address: { type: string, minLength: 1 }
+        payment: { type: string, description: 'Demo: "declined" forces a 402' }
+    Order:
+      type: object
+      properties:
+        id: { type: string }
+        items: { type: array, items: { type: object, properties: { sku: { type: string }, qty: { type: integer } } } }
+        address: { type: string }
+        status: { $ref: '#/components/schemas/Status' }
+        createdAt: { type: string, format: date-time }
+    Problem:
+      type: object
+      required: [type, title, status, detail]
+      properties:
+        type: { type: string, format: uri, example: 'https://campuseat.example/problems/order-not-found' }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+    ValidationProblem:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          properties:
+            errors: { type: array, items: { type: object, properties: { field: { type: string }, message: { type: string } } } }

@@ -1,0 +1,273 @@
+=== D1: SUCCESS PATH ===
+
+$ curl -i -X POST http://localhost:3000/orders -H Content-Type: application/json -H Idempotency-Key: k-100 -d {"items":[{"sku":"burger","qty":2}],"address":"Hostel B, Room 214"}
+HTTP/1.1 201 Created
+X-Powered-By: Express
+Location: /orders/1
+Content-Type: application/json; charset=utf-8
+Content-Length: 133
+ETag: W/"85-uT73rE0o3VLeGJiU00LthByPrhw"
+Date: Fri, 09 Oct 2026 05:45:26 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"id":"1","items":[{"sku":"burger","qty":2}],"address":"Hostel B, Room 214","status":"placed","createdAt":"2026-10-09T05:45:26.257Z"}
+--- idempotent replay (same key, same body): same 201, same id, Idempotency-Replayed: true
+
+$ curl -i -X POST http://localhost:3000/orders -H Content-Type: application/json -H Idempotency-Key: k-100 -d {"items":[{"sku":"burger","qty":2}],"address":"Hostel B, Room 214"}
+HTTP/1.1 201 Created
+X-Powered-By: Express
+Location: /orders/1
+Content-Type: application/json; charset=utf-8
+Idempotency-Replayed: true
+Content-Length: 133
+ETag: W/"85-uT73rE0o3VLeGJiU00LthByPrhw"
+Date: Fri, 09 Oct 2026 05:45:26 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"id":"1","items":[{"sku":"burger","qty":2}],"address":"Hostel B, Room 214","status":"placed","createdAt":"2026-10-09T05:45:26.257Z"}
+
+$ curl -i http://localhost:3000/orders/1
+HTTP/1.1 200 OK
+X-Powered-By: Express
+Content-Type: application/json; charset=utf-8
+Content-Length: 133
+ETag: W/"85-uT73rE0o3VLeGJiU00LthByPrhw"
+Date: Fri, 09 Oct 2026 05:45:26 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"id":"1","items":[{"sku":"burger","qty":2}],"address":"Hostel B, Room 214","status":"placed","createdAt":"2026-10-09T05:45:26.257Z"}
+
+$ curl -i -X PATCH http://localhost:3000/orders/1 -H Content-Type: application/json -d {"status":"preparing"}
+HTTP/1.1 200 OK
+X-Powered-By: Express
+Content-Type: application/json; charset=utf-8
+Content-Length: 136
+ETag: W/"88-PFA7S4YgC3WPw8y0uzjd9JeQUYM"
+Date: Fri, 09 Oct 2026 05:45:26 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"id":"1","items":[{"sku":"burger","qty":2}],"address":"Hostel B, Room 214","status":"preparing","createdAt":"2026-10-09T05:45:26.257Z"}
+=== D2: FAILURE PATHS ===
+--- empty cart
+
+$ curl -i -X POST http://localhost:3000/orders -H Content-Type: application/json -d {"items":[],"address":"Hostel B"}
+HTTP/1.1 422 Unprocessable Entity
+X-Powered-By: Express
+Content-Type: application/problem+json; charset=utf-8
+Content-Length: 210
+ETag: W/"d2-R5bCTLZBIihn4eGDIxEhA/CfwVE"
+Date: Fri, 09 Oct 2026 05:45:26 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"type":"https://campuseat.example/problems/empty-cart","title":"Cart Is Empty","status":422,"detail":"An order needs at least one item.","errors":[{"field":"items","message":"must contain at least one item"}]}
+--- qty <= 0 AND missing address (two bad fields at once)
+
+$ curl -i -X POST http://localhost:3000/orders -H Content-Type: application/json -d {"items":[{"sku":"burger","qty":0}]}
+HTTP/1.1 422 Unprocessable Entity
+X-Powered-By: Express
+Content-Type: application/problem+json; charset=utf-8
+Content-Length: 292
+ETag: W/"124-KL4qCuronGpEBIky3EODzV66xGI"
+Date: Fri, 09 Oct 2026 05:45:26 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"type":"https://campuseat.example/problems/validation-failed","title":"Validation Failed","status":422,"detail":"2 field(s) failed validation.","errors":[{"field":"items[0].qty","message":"must be an integer >= 1"},{"field":"address","message":"is required and must be a non-empty string"}]}
+--- qty not an integer + empty sku + no address (three)
+
+$ curl -i -X POST http://localhost:3000/orders -H Content-Type: application/json -d {"items":[{"sku":"","qty":1.5}]}
+HTTP/1.1 422 Unprocessable Entity
+X-Powered-By: Express
+Content-Type: application/problem+json; charset=utf-8
+Content-Length: 372
+ETag: W/"174-jWSnZ3e0SgXYyF/upiHTe81RfAE"
+Date: Fri, 09 Oct 2026 05:45:26 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"type":"https://campuseat.example/problems/validation-failed","title":"Validation Failed","status":422,"detail":"3 field(s) failed validation.","errors":[{"field":"items[0].sku","message":"is required and must be a non-empty string"},{"field":"items[0].qty","message":"must be an integer >= 1"},{"field":"address","message":"is required and must be a non-empty string"}]}
+--- item unavailable
+
+$ curl -i -X POST http://localhost:3000/orders -H Content-Type: application/json -d {"items":[{"sku":"sold-out-wrap","qty":1}],"address":"Library"}
+HTTP/1.1 409 Conflict
+X-Powered-By: Express
+Content-Type: application/problem+json; charset=utf-8
+Content-Length: 154
+ETag: W/"9a-pLC8GBi9bcjoo3OKRYPuVHVY3tY"
+Date: Fri, 09 Oct 2026 05:45:26 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"type":"https://campuseat.example/problems/item-unavailable","title":"Item Unavailable","status":409,"detail":"'sold-out-wrap' has 0 left; requested 1."}
+--- payment declined
+
+$ curl -i -X POST http://localhost:3000/orders -H Content-Type: application/json -d {"items":[{"sku":"fries","qty":1}],"address":"Library","payment":"declined"}
+HTTP/1.1 402 Payment Required
+X-Powered-By: Express
+Content-Type: application/problem+json; charset=utf-8
+Content-Length: 146
+ETag: W/"92-6SYamlA4szFWmwzOb3XVOhBWI9E"
+Date: Fri, 09 Oct 2026 05:45:26 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"type":"https://campuseat.example/problems/payment-declined","title":"Payment Declined","status":402,"detail":"The payment method was declined."}
+--- unknown id
+
+$ curl -i http://localhost:3000/orders/999
+HTTP/1.1 404 Not Found
+X-Powered-By: Express
+Content-Type: application/problem+json; charset=utf-8
+Content-Length: 135
+ETag: W/"87-v16CJKSvJZsAJEXPCBVgocmw1lc"
+Date: Fri, 09 Oct 2026 05:45:26 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"type":"https://campuseat.example/problems/order-not-found","title":"Order Not Found","status":404,"detail":"No order with id '999'."}
+--- illegal transition (preparing -> placed... then collected skipping ready)
+
+$ curl -i -X PATCH http://localhost:3000/orders/1 -H Content-Type: application/json -d {"status":"collected"}
+HTTP/1.1 409 Conflict
+X-Powered-By: Express
+Content-Type: application/problem+json; charset=utf-8
+Content-Length: 168
+ETag: W/"a8-fBPPK13HIMNP8H4Z4H2AiJfQUfw"
+Date: Fri, 09 Oct 2026 05:45:26 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"type":"https://campuseat.example/problems/illegal-transition","title":"Illegal Transition","status":409,"detail":"Cannot move order from 'preparing' to 'collected'."}
+--- illegal cancel (order 1 is already preparing)
+
+$ curl -i -X DELETE http://localhost:3000/orders/1
+HTTP/1.1 409 Conflict
+X-Powered-By: Express
+Content-Type: application/problem+json; charset=utf-8
+Content-Length: 161
+ETag: W/"a1-QxJZazXFTkIAvYP8gySeVAbLG3Q"
+Date: Fri, 09 Oct 2026 05:45:26 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"type":"https://campuseat.example/problems/illegal-transition","title":"Illegal Transition","status":409,"detail":"Cannot cancel an order that is 'preparing'."}
+--- malformed JSON
+
+$ curl -i -X POST http://localhost:3000/orders -H Content-Type: application/json -d {"items": [oops
+HTTP/1.1 400 Bad Request
+X-Powered-By: Express
+Content-Type: application/problem+json; charset=utf-8
+Content-Length: 141
+ETag: W/"8d-+qXV9oMGxijgnfsiE9t8QgzTB+M"
+Date: Fri, 09 Oct 2026 05:45:26 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"type":"https://campuseat.example/problems/malformed-json","title":"Malformed JSON","status":400,"detail":"Request body is not valid JSON."}
+--- idempotency key reused with different body
+
+$ curl -i -X POST http://localhost:3000/orders -H Content-Type: application/json -H Idempotency-Key: k-100 -d {"items":[{"sku":"fries","qty":9}],"address":"Elsewhere"}
+HTTP/1.1 422 Unprocessable Entity
+X-Powered-By: Express
+Content-Type: application/problem+json; charset=utf-8
+Content-Length: 185
+ETag: W/"b9-c0e702PlLN4r3EhvnRsLWVwY5Lk"
+Date: Fri, 09 Oct 2026 05:45:26 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"type":"https://campuseat.example/problems/idempotency-key-reuse","title":"Idempotency Key Reused","status":422,"detail":"This Idempotency-Key was already used with a different body."}
+--- B4: internal error (simulated DB failure) -> clean 500, no stack/DB text
+
+$ curl -i -X POST http://localhost:3000/orders -H X-Demo-Fault: db -H Content-Type: application/json -d {"items":[{"sku":"fries","qty":1}],"address":"Library"}
+HTTP/1.1 500 Internal Server Error
+X-Powered-By: Express
+Content-Type: application/problem+json; charset=utf-8
+Content-Length: 174
+ETag: W/"ae-f6P/4fktogyy2aUBNTGs2J7Wk08"
+Date: Fri, 09 Oct 2026 05:45:26 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"type":"https://campuseat.example/problems/internal-error","title":"Internal Server Error","status":500,"detail":"Something went wrong on our side. Please try again later."}
+--- transient: 503 + Retry-After
+
+$ curl -i -X POST http://localhost:3000/orders -H X-Demo-Fault: busy -H Content-Type: application/json -d {"items":[{"sku":"fries","qty":1}],"address":"Library"}
+HTTP/1.1 503 Service Unavailable
+X-Powered-By: Express
+Retry-After: 3
+Content-Type: application/problem+json; charset=utf-8
+Content-Length: 158
+ETag: W/"9e-u+Udpa79Lo7IKSnPeb5HCG9NFmE"
+Date: Fri, 09 Oct 2026 05:45:26 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"type":"https://campuseat.example/problems/service-unavailable","title":"Service Unavailable","status":503,"detail":"Kitchen system is busy. Retry shortly."}
+--- rate limit: burst of POSTs until 429 + Retry-After
+request 1 -> 201
+request 2 -> 201
+request 3 -> 201
+request 4 -> 201
+request 5 -> 429
+request 6 -> 429
+request 7 -> 429
+request 8 -> 429
+
+$ curl -i -X POST http://localhost:3000/orders -H Content-Type: application/json -d {"items":[{"sku":"fries","qty":1}],"address":"Burst"}
+HTTP/1.1 429 Too Many Requests
+X-Powered-By: Express
+Retry-After: 10
+Content-Type: application/problem+json; charset=utf-8
+Content-Length: 138
+ETag: W/"8a-Qr9f1sBQcm/1uRwUz5gLZ38nEcE"
+Date: Fri, 09 Oct 2026 05:45:26 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"type":"https://campuseat.example/problems/rate-limited","title":"Too Many Requests","status":429,"detail":"Limit is 12 orders per 10s."}
+=== D3: CONTENT NEGOTIATION ===
+
+$ curl -i http://localhost:3000/orders/1 -H Accept: application/json
+HTTP/1.1 200 OK
+X-Powered-By: Express
+Content-Type: application/json; charset=utf-8
+Content-Length: 136
+ETag: W/"88-PFA7S4YgC3WPw8y0uzjd9JeQUYM"
+Date: Fri, 09 Oct 2026 05:45:26 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"id":"1","items":[{"sku":"burger","qty":2}],"address":"Hostel B, Room 214","status":"preparing","createdAt":"2026-10-09T05:45:26.257Z"}
+
+$ curl -i http://localhost:3000/orders/1 -H Accept: application/xml
+HTTP/1.1 200 OK
+X-Powered-By: Express
+Content-Type: application/xml; charset=utf-8
+Content-Length: 215
+ETag: W/"d7-pdDlBAzMeeHBfNWPaY9EDmqRkXE"
+Date: Fri, 09 Oct 2026 05:45:26 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+<?xml version="1.0" encoding="utf-8"?><order><id>1</id><item><sku>burger</sku><qty>2</qty></item><address>Hostel B, Room 214</address><status>preparing</status><createdAt>2026-10-09T05:45:26.257Z</createdAt></order>
+
+$ curl -i http://localhost:3000/orders/1 -H Accept: text/csv
+HTTP/1.1 406 Not Acceptable
+X-Powered-By: Express
+Content-Type: application/problem+json; charset=utf-8
+Content-Length: 182
+ETag: W/"b6-oYs96XndUehJvoweFIUVqH3rF2I"
+Date: Fri, 09 Oct 2026 05:45:26 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"type":"https://campuseat.example/problems/not-acceptable","title":"Not Acceptable","status":406,"detail":"Cannot produce 'text/csv'. Supported: application/json, application/xml."}
+=== D4: NO REGRESSIONS (idempotency) ===
+--- orders created for key k-100 (must be exactly 1 with address 'Hostel B, Room 214')
+1 order(s) for key k-100
