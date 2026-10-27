@@ -1,11 +1,15 @@
 # CampusEats · Menu service in GraphQL (CS543 Assignment 7)
 
-**Team:** <roll numbers + names of all members>
+**Team:** 20251651068 paras pandey
+      20251651067 Pankaj singh 
+      20251651069 Pranav
+      20251651049 Jayesh
+      20251651082 Shivam 
+  **team no 24**
 
 **Run:** `npm install && mysql -u root -p < schema.sql && node server.js` → open http://localhost:4000
 (DB settings via env: `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`; defaults are `localhost` / `root` / empty / `campuseats`.)
 
-Demo video: <Google Drive link> · Screenshots: before/after the mutation (in the same Drive folder)
 
 ## Answers
 1. **Service picked:** Menu (`dishes` table: id, name, price, available).
