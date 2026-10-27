@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Campus Library</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Campus Library</h1>
+  <p class="sub">Authors and their books &mdash; data served by GraphQL</p>
+
+  <div id="list">Loading&hellip;</div>
+
+  <form id="addForm">
+    <h3>Add a book</h3>
+    <input id="title" placeholder="Book title" required>
+    <input id="year" type="number" placeholder="Year" style="width:90px">
+    <select id="authorId">
+      <option value="1">Asha Patel</option>
+      <option value="2">Ravi Kumar</option>
+    </select>
+    <button type="submit">Add book</button>
+  </form>
+
+  <script>
+    const API = 'http://localhost:4000/';
+
+    // helper: send a GraphQL query/mutation to the API
+    async function gql(query, variables) {
+      const res = await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, variables }),
+      });
+      const json = await res.json();
+      if (json.errors) console.error(json.errors);
+      return json.data;
+    }
+
+    // 1. READ: load all authors with their books
+    async function load() {
+      const data = await gql(`{ authors { id name country books { title year } } }`);
+      document.getElementById('list').innerHTML = data.authors.map(a => `
+        <div class="author-card">
+          <h2>${a.name}</h2>
+          <div class="country">${a.country || ''}</div>
+          ${a.books.map(b => `<div class="book">${b.title} <span class="yr">(${b.year ?? 'n/a'})</span></div>`).join('')}
+        </div>`).join('');
+    }
+
+    // 2. WRITE: add a book, then reload the list
+    document.getElementById('addForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const title = document.getElementById('title').value;
+      const yearText = document.getElementById('year').value;
+      const year = yearText === '' ? null : Number(yearText);
+      const authorId = document.getElementById('authorId').value;
+      await gql(
+        `mutation($t:String!,$y:Int,$a:ID!){ addBook(title:$t, year:$y, authorId:$a){ id } }`,
+        { t: title, y: year, a: authorId }
+      );
+      e.target.reset();
+      load();
+    });
+
+    load();
+  </script>
+</body>
+</html>
