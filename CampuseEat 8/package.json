@@ -1,0 +1,12 @@
+{
+  "name": "campuseats-rest-api",
+  "version": "1.0.0",
+  "description": "CampusEats Menu REST API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

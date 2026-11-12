@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CampusEats Menu</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <h1>CampusEats Menu</h1>
+
+    <h2>Available Items</h2>
+
+    <ul id="itemList"></ul>
+
+    <h2>Add New Item</h2>
+
+    <form id="itemForm">
+        <input type="text" id="name" placeholder="Item Name" required>
+
+        <input type="number" id="price" placeholder="Price" required>
+
+        <select id="available">
+            <option value="true">Available</option>
+            <option value="false">Not Available</option>
+        </select>
+
+        <button type="submit">Add Item</button>
+    </form>
+
+    <script>
+        async function loadItems() {
+            const response = await fetch('/items');
+            const items = await response.json();
+
+            const itemList = document.getElementById('itemList');
+            itemList.innerHTML = '';
+
+            items.forEach(item => {
+                const li = document.createElement('li');
+
+                li.textContent =
+                    `${item.id} | ${item.name} | Rs.${item.price} | ${item.available ? 'Available' : 'Not Available'}`;
+
+                itemList.appendChild(li);
+            });
+        }
+
+        document.getElementById('itemForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const item = {
+                name: document.getElementById('name').value,
+                price: Number(document.getElementById('price').value),
+                available: document.getElementById('available').value === "true"
+            };
+
+            await fetch('/items', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(item)
+            });
+
+            document.getElementById('itemForm').reset();
+            loadItems();
+        });
+
+        loadItems();
+    </script>
+
+</body>
+</html>
